@@ -36,14 +36,18 @@ async def home():
     return {"Hello": "World"}
 
 
-@api.get("/Users")
-async def get_all_users():
-    pass
+@api.get("/Users",response_model=list[UserPublic])
+async def get_all_users(db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.User)
+    )
+    user_list = result.scalars().all()
+    return user_list
 
 
 @api.post("/Users", 
           response_model=UserPrivate, 
-          status_code=status.HTTP_201_CREATED
+          status_code=status.HTTP_201_CREATED,
 )
 async def create_user(
     user: UserCreate, 
@@ -64,7 +68,6 @@ async def create_user(
     await db.commit()
     await db.refresh(new_user)
     return new_user
-    
 
 
 @api.get("/Users/{user_id}")
@@ -72,6 +75,14 @@ async def get_user(user_id: int):
     pass
 
 
-@api.delete("/Users/{user_id}")
-async def delete_user(user_id: int):
-    pass
+@api.delete("/Users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.User).where(models.User.id == user_id)
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="User not found")
+    await db.delete(user)
+    await db.commit()
