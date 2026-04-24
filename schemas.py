@@ -18,4 +18,9 @@ class UserPublic(BaseModel):
 
 class UserPrivate(UserPublic):
     pass
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type:  str
     
