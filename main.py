@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.exception_handlers import http_exception_handler
-from sqlalchemy import select
+from sqlalchemy import select, func
 from fastapi.security import OAuth2PasswordRequestForm
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,7 @@ from config import settings
 import models
 from schemas import UserCreate, UserPrivate, UserPublic, Token
 from database import Base, engine, get_db
-from auth import verify_password, create_access_token, hash_password
+from auth import verify_password, create_access_token, hash_password, CurrentUser
 
 
 @asynccontextmanager
@@ -61,12 +61,18 @@ async def create_user(
                             detail="Username already taken")
     new_user = models.User(
         username=user.username,
+        email=user.email.lower(),
         hashed_password=hash_password(user.password)
     )
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
     return new_user
+
+
+@api.get("/Users/Me", response_model=UserPrivate)
+async def get_me(current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+    return current_user
 
 
 @api.get("/Users/{user_id}", response_model=UserPublic)
@@ -82,7 +88,13 @@ async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
 
 
 @api.delete("/Users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+async def delete_user(user_id: int, current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized to delete user"
+        )
+    
     result = await db.execute(
         select(models.User).where(models.User.id == user_id)
     )
@@ -101,7 +113,7 @@ async def login_for_access_token(
 ):
     result = await db.execute(
         select(models.User).where(
-            models.User.username == form_data.username,
+            models.User.email == form_data.username,
         ),
     )
 

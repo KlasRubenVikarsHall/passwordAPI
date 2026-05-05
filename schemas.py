@@ -8,6 +8,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str = Field(min_length=6)
+    email: EmailStr = Field(min_length=6, max_length=30)
 
 
 class UserPublic(BaseModel):
@@ -17,7 +18,7 @@ class UserPublic(BaseModel):
 
 
 class UserPrivate(UserPublic):
-    pass
+    email: EmailStr = Field(min_length=6, max_length=30)
 
 
 class Token(BaseModel):
