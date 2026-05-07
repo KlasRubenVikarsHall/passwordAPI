@@ -1,5 +1,4 @@
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
-from datetime import datetime
 
 
 class UserBase(BaseModel):
@@ -42,3 +41,16 @@ class ForgotPasswordResponse(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
+
+
+class ProductPublic(BaseModel):
+    product_name: str = Field(default=None, min_length=1, max_length=50)
+    description: str | None = Field(default=None, min_length=1, max_length=100)
+    cost: float
+
+
+# class InventoryItemPublic(BaseModel):
+#     model_config = ConfigDict(from_attributes=True)
+#     product_id: int
+#     quantity: int
+

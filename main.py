@@ -12,7 +12,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from config import settings
 import models
-from schemas import UserCreate, UserPrivate, UserPublic, Token, ForgotPasswordResponse, ResetPasswordRequest, ForgotPasswordRequest, UserUpdate
+from schemas import (UserCreate, 
+                     UserPrivate, 
+                     UserPublic, 
+                     Token, 
+                     ForgotPasswordResponse, 
+                     ResetPasswordRequest, 
+                     ForgotPasswordRequest, 
+                     UserUpdate,
+                     ProductPublic,
+)
 from database import Base, engine, get_db
 from auth import verify_password, create_access_token, hash_password, CurrentUser, create_reset_token
 
@@ -73,6 +82,12 @@ async def create_user(
 @api.get("/Users/Me", response_model=UserPrivate)
 async def get_me(current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
     return current_user
+
+
+# @api.post("/Users/Me/Inventory", response_model=UserPrivate)
+# async def get_me(body: ,current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+#     return current_user
+
 
 
 @api.patch("/Users/{user_id}", response_model=UserPrivate)
@@ -155,7 +170,6 @@ async def forgot_password(
     given_email: ForgotPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    # Find the user by email
     result = await db.execute(
         select(models.User).where(given_email.email.lower() == models.User.email)
     )
@@ -190,6 +204,13 @@ async def reset_password(
     if not token_result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Invalid token")
+    
+    if token_result.reset_token_expires < datetime.now(UTC):
+        await db.delete(token_result)
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Reset token has expired")
+
     result = await db.execute(
         select(models.User).where(
             models.User.email == token_result.email
@@ -202,10 +223,31 @@ async def reset_password(
 
     user.hashed_password = hash_password(body.new_password)
     
-    # delete reset token from database
     await db.delete(token_result)
-    #db.add(user)
     await db.commit()
+
+
+@api.get("/products", response_model=list[ProductPublic])
+async def list_all_products(db: Annotated[AsyncSession, Depends(get_db)]):
+    result = await db.execute(
+        select(models.Product)
+    )
+    products = result.scalars().all()
+    
+    if not products:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="No products found")
+    return products
+
+
+# @api.get("/products/{product_id}", response_model=ProductPublic)
+# async def show_product(product_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
+#     pass
+
+
+# @api.post("/products/{product_id}", response_model=ProductPublic)
+# async def purchase_product(product_id: int, current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+#     pass
 
 
 @api.exception_handler(StarletteHTTPException)
@@ -213,4 +255,5 @@ async def general_http_exception_handler(
     request: Request,
     exception: StarletteHTTPException,
 ):
+    print(f"{request.method} {request.url} → {exception.status_code}")
     return await http_exception_handler(request, exception)
