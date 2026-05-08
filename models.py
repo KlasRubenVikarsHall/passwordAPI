@@ -14,7 +14,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, unique=False, nullable=False)
-    inventory: Mapped[list[Inventory]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+    #inventory: Mapped[list[Inventory]] = relationship(back_populates="owner", cascade="all, delete-orphan")
 
 
 # class Inventory(Base):
