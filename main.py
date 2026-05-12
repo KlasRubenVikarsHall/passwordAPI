@@ -90,6 +90,43 @@ async def get_me(current_user: CurrentUser, db: Annotated[AsyncSession, Depends(
 
 
 
+@api.patch("/Users/ResetPassword", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(
+    body: ResetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    result = await db.execute(
+        select(models.PasswordResetToken).where(
+            models.PasswordResetToken.reset_token == body.token
+        )
+    )
+    token_result = result.scalars().first()
+    if not token_result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="Invalid token")
+
+    if token_result.reset_token_expires.replace(tzinfo=UTC) < datetime.now(UTC):
+        await db.delete(token_result)
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Reset token has expired")
+
+    result = await db.execute(
+        select(models.User).where(
+            models.User.email == token_result.email
+        )
+    )
+    user = result.scalars().first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail="User not found")
+
+    user.hashed_password = hash_password(body.new_password)
+
+    await db.delete(token_result)
+    await db.commit()
+
+
 @api.patch("/Users/{user_id}", response_model=UserPrivate)
 async def update_user(user_id: int, current_user: CurrentUser, body: UserUpdate, db: Annotated[AsyncSession, Depends(get_db)]):
     if user_id != current_user.id:
@@ -188,43 +225,6 @@ async def forgot_password(
     await db.commit()
     await db.refresh(token)
     return ForgotPasswordResponse(mock_reset_token=token.reset_token)
-
-
-@api.patch("/Users/ResetPassword", status_code=status.HTTP_204_NO_CONTENT)
-async def reset_password(
-    body: ResetPasswordRequest,
-    db: Annotated[AsyncSession, Depends(get_db)],
-):
-    result = await db.execute(
-        select(models.PasswordResetToken).where(
-            models.PasswordResetToken.reset_token == body.token
-        )
-    )
-    token_result = result.scalars().first()
-    if not token_result:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="Invalid token")
-    
-    if token_result.reset_token_expires < datetime.now(UTC):
-        await db.delete(token_result)
-        await db.commit()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Reset token has expired")
-
-    result = await db.execute(
-        select(models.User).where(
-            models.User.email == token_result.email
-        )
-    )
-    user = result.scalars().first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
-                            detail="User not found")
-
-    user.hashed_password = hash_password(body.new_password)
-    
-    await db.delete(token_result)
-    await db.commit()
 
 
 @api.get("/products", response_model=list[ProductPublic])
