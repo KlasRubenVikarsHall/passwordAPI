@@ -26,14 +26,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_hash.verify(plain_password, hashed_password)
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    payload = data.copy()
+def create_access_token(user_id: int, expires_delta: timedelta | None = None) -> str:
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
     else:
         expire = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
-    
-    payload.update({"exp": expire})
+
+    payload = {"sub": user_id, "exp" : expire}
     jwt_encoded = jwt.encode(
         payload,
         settings.secret_key.get_secret_value(),
