@@ -23,7 +23,7 @@ from schemas import (UserCreate,
                      ProductPublic,
 )
 from database import Base, engine, get_db
-from auth import verify_password, create_access_token, hash_password, CurrentUser, create_reset_token
+from auth import verify_password, create_access_token, hash_password, create_reset_token, get_current_user
 
 
 @asynccontextmanager
@@ -34,7 +34,6 @@ async def lifespan(_app: FastAPI):
     yield
     # Shutdown
     await engine.dispose()
-
 
 api = FastAPI(lifespan=lifespan)
 
@@ -62,12 +61,20 @@ async def create_user(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     result = await db.execute(
-        select(models.User).where(models.User.username == user.username)
+        select(models.User).where(func.lower(models.User.username) == user.username.lower())
     )
     old_user = result.scalars().first()
     if old_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Username already taken")
+    
+    result = await db.execute(
+        select(models.User).where(models.User.email == user.email.lower())
+    )
+    old_user = result.scalars().first()
+    if old_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Email already taken")
     new_user = models.User(
         username=user.username,
         email=user.email.lower(),
@@ -80,7 +87,7 @@ async def create_user(
 
 
 @api.get("/Users/Me", response_model=UserPrivate)
-async def get_me(current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+async def get_me(current_user: Annotated[models.User, Depends(get_current_user)], db: Annotated[AsyncSession, Depends(get_db)]):
     return current_user
 
 
@@ -128,15 +135,35 @@ async def reset_password(
 
 
 @api.patch("/Users/{user_id}", response_model=UserPrivate)
-async def update_user(user_id: int, current_user: CurrentUser, body: UserUpdate, db: Annotated[AsyncSession, Depends(get_db)]):
+async def update_user(
+    user_id: int, 
+    current_user: Annotated[models.User, Depends(get_current_user)], 
+    body: UserUpdate, 
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
     if user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized to update user"
         )
+    
     if body.email:
+        result = await db.execute(
+            select(models.User).where(models.User.email == body.email.lower())
+        )
+        old_user = result.scalars().first()
+        if old_user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Email already taken")
         current_user.email = body.email
     if body.username:
+        result = await db.execute(
+            select(models.User).where(func.lower(models.User.username) == body.username.lower())
+        )
+        old_user = result.scalars().first()
+        if old_user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Username already taken")
         current_user.username = body.username
     await db.commit()
     await db.refresh(current_user)
@@ -156,7 +183,11 @@ async def get_user(user_id: int, db: Annotated[AsyncSession, Depends(get_db)]):
 
 
 @api.delete("/Users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: int, current_user: CurrentUser, db: Annotated[AsyncSession, Depends(get_db)]):
+async def delete_user(
+    user_id: int, 
+    current_user: Annotated[models.User, Depends(get_current_user)], 
+    db: Annotated[AsyncSession, Depends(get_db)]
+):
     if user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -181,7 +212,7 @@ async def login_for_access_token(
 ):
     result = await db.execute(
         select(models.User).where(
-            models.User.email == form_data.username,
+            models.User.email == form_data.username.lower(),
         ),
     )
 
@@ -193,7 +224,6 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"}
         )
     
-    # create access token
     time_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         data={"sub": str(user.id)},
@@ -215,7 +245,6 @@ async def forgot_password(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="User not found")
     
-    # Create a token for pw reset (call auth method)
     token = models.PasswordResetToken(
         reset_token=create_reset_token(), 
         reset_token_expires=datetime.now(UTC) + timedelta(minutes=5),

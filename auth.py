@@ -88,6 +88,3 @@ async def get_current_user(
 
 def create_reset_token() -> str:
     return secrets.token_urlsafe(32)
-
-
-CurrentUser = Annotated[models.User, Depends(get_current_user)]
